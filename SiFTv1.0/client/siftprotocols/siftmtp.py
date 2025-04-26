@@ -12,7 +12,7 @@ class SiFT_MTP_Error(Exception):
 class SiFT_MTP:
 	def __init__(self, peer_socket):
 
-		self.DEBUG = True
+		self.DEBUG = False
 		# --------- CONSTANTS ------------
 		self.version_major = 1
 		self.version_minor = 0
@@ -46,6 +46,7 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
+		self.enc = PublicKeyEncryption.Encryption()
 	
 	def get_perm_sym_key(self):
 		if not self.perm_sym_key:
@@ -66,7 +67,14 @@ class SiFT_MTP:
 		parsed_msg_hdr['rnd'], i = msg_hdr[i:i+self.size_msg_hdr_rnd], i+self.size_msg_hdr_rnd
 		parsed_msg_hdr['rsv'] = msg_hdr[i:i+self.size_msg_hdr_rsv]
 		return parsed_msg_hdr
-
+    
+	def parse_msg_body(self, msg_body, login_req=False):
+		parsed_msg_body, i = {}, len(msg_body)
+		if login_req:
+			parsed_msg_body['etk'], i = msg_body[i-self.sym_key_length:i], i-self.sym_key_length
+		parsed_msg_body['mac'], i = msg_body[i-self.size_mac:i], i-self.size_mac
+		parsed_msg_body['epd'] = msg_body[:i]	
+		return parsed_msg_body
 
 	# receives n bytes from the peer socket
 	def receive_bytes(self, n):
@@ -103,11 +111,16 @@ class SiFT_MTP:
 
 		if parsed_msg_hdr['typ'] not in self.msg_types:
 			raise SiFT_MTP_Error('Unknown message type found in message header')
+		
+		if int.from_bytes(parsed_msg_hdr['sqn'], 'big') < int.from_bytes(self.msg_hdr_sqn, 'big'):
+			raise SiFT_MTP_Error('Invalid sequence number found in message header')
+		self.msg_hdr_sqn = parsed_msg_hdr['sqn']
 
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
 
 		try:
 			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
+
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
@@ -122,8 +135,29 @@ class SiFT_MTP:
 
 		if len(msg_body) != msg_len - self.size_msg_hdr: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
+        
+		#decrypt the payload
+		payload = msg_body
+		if parsed_msg_hdr['typ'] == self.type_login_res:
+			
+			parsed_msg_body = self.parse_msg_body(msg_body)
+			mac = parsed_msg_body['mac']
+			epd = parsed_msg_body['epd']
 
-		return parsed_msg_hdr['typ'], msg_body
+			payload = self.enc.decrypt_epd(
+							epd,
+							msg_hdr,
+							parsed_msg_hdr['sqn'],
+							parsed_msg_hdr['rnd'], 
+							self.enc.tk, 
+							mac
+							)
+	
+
+
+		# TODO: add else statement for other types
+
+		return parsed_msg_hdr['typ'], payload
 
 
 	# sends all bytes provided via the peer socket
@@ -152,9 +186,7 @@ class SiFT_MTP:
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
 
 		# add encryption
-		enc = PublicKeyEncryption.Encryption()
-		info = enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd)
-		
+		info = self.enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd)
 
 		# DEBUG 
 		if self.DEBUG:
@@ -164,6 +196,7 @@ class SiFT_MTP:
 			print(msg_payload.hex())
 			print('------------------------------------------')
 		# DEBUG 
+
 		if msg_type == self.type_login_req:
 			bytes_to_send = msg_hdr + info['epd'] + info['mac'] + info['aes_key']
 		else:

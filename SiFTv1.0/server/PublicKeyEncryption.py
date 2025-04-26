@@ -24,6 +24,7 @@ class Encryption:
         self.sign = True
         # TODO: Fix Hardcoded self.private_key_passphrase
         self.private_key_passphrase = '00000'
+        self.tk = None
     
     def generate(self):
         pass
@@ -77,7 +78,7 @@ class Encryption:
         pub_key = self.load_publickey()
         RSAcipher = PKCS1_OAEP.new(pub_key)
         
-        symkey = get_random_bytes(self.AESkeysize // 8)
+        symkey = self.tk
         AEScipher = AES.new(symkey, AES.MODE_GCM, nonce=sqn+rnd)
         
 
@@ -86,10 +87,10 @@ class Encryption:
         encrypted_symkey = RSAcipher.encrypt(symkey)  
 
         hybrid_struct = {}
-        hybrid_struct['NONCE'] = sqn+rnd
-        hybrid_struct['CIPHERTEXT'] = ciphertext
-        hybrid_struct['AUTH_TAG'] = authtag
-        hybrid_struct['ENCRYPTED AES KEY'] = encrypted_symkey
+        hybrid_struct['aes_key'] = encrypted_symkey
+        hybrid_struct['epd'] = ciphertext
+        hybrid_struct['mac'] = authtag
+        hybrid_struct['nonce'] = sqn+rnd
         return hybrid_struct
     
     def decrypt_sym_key(self, encsymkey):
@@ -97,6 +98,7 @@ class Encryption:
         RSAcipher = PKCS1_OAEP.new(priv_key)
         try:
             symkey = RSAcipher.decrypt(encsymkey)
+            self.tk = symkey
         except ValueError:
             raise EncryptionError('Decryption of AES key failed')
         return symkey

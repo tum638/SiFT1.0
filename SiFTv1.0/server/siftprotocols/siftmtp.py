@@ -2,6 +2,7 @@
 
 import socket
 import PublicKeyEncryption
+from Crypto.Random import get_random_bytes
 
 class SiFT_MTP_Error(Exception):
 
@@ -11,7 +12,7 @@ class SiFT_MTP_Error(Exception):
 class SiFT_MTP:
 	def __init__(self, peer_socket):
 
-		self.DEBUG = True
+		self.DEBUG = False
 		# --------- CONSTANTS ------------
 		self.version_major = 1
 		self.version_minor = 0
@@ -45,6 +46,7 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
+		self.enc = PublicKeyEncryption.Encryption()
 		
 	
 	def get_perm_sym_key(self):
@@ -67,9 +69,9 @@ class SiFT_MTP:
 		parsed_msg_hdr['rsv'] = msg_hdr[i:i+self.size_msg_hdr_rsv]
 		return parsed_msg_hdr
 
-	def parse_msg_body(self, msg_body, login=False):
+	def parse_msg_body(self, msg_body, login_req=False):
 		parsed_msg_body, i = {}, len(msg_body)
-		if login:
+		if login_req:
 			parsed_msg_body['etk'], i = msg_body[i-self.sym_key_length:i], i-self.sym_key_length
 		parsed_msg_body['mac'], i = msg_body[i-self.mac_length:i], i-self.mac_length
 		parsed_msg_body['epd'] = msg_body[:i]	
@@ -134,20 +136,21 @@ class SiFT_MTP:
 
 		if len(msg_body) != msg_len - self.size_msg_hdr: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
+		
+		#decrypt the payload
 		payload = msg_body
 		if parsed_msg_hdr['typ'] == self.type_login_req:
-			enc = PublicKeyEncryption.Encryption()
-			parsed_msg_body = self.parse_msg_body(msg_body, login=True)
+			parsed_msg_body = self.parse_msg_body(msg_body, login_req=True)
 			etk = parsed_msg_body['etk']
 			try:
-				tk = enc.decrypt_sym_key(etk)
+				tk = self.enc.decrypt_sym_key(etk)
 			except ValueError:
 				print('Error: decryption of AES key failed')
 
 			mac = parsed_msg_body['mac']
 			epd = parsed_msg_body['epd']
 
-			payload = enc.decrypt_epd(
+			payload = self.enc.decrypt_epd(
 							epd,
 							msg_hdr,
 							parsed_msg_hdr['sqn'],
@@ -155,6 +158,7 @@ class SiFT_MTP:
 							tk, 
 							mac
 							)
+		# TODO: add else statement for other types
 			
 		return parsed_msg_hdr['typ'], payload
 
@@ -171,9 +175,21 @@ class SiFT_MTP:
 	def send_msg(self, msg_type, msg_payload):
 		
 		# build message
-		msg_size = self.size_msg_hdr + len(msg_payload)
+		msg_size = self.size_msg_hdr + len(msg_payload) + self.mac_length
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len
+
+		#increment sequence number
+		sequence_number = int.from_bytes(self.msg_hdr_sqn, byteorder='big') + 1
+		self.msg_hdr_sqn = sequence_number.to_bytes(self.size_msg_hdr_sqn, byteorder='big')
+        
+		#generate random bytes
+		self.msg_hdr_rnd = get_random_bytes(self.size_msg_hdr_rnd)
+
+		# build message header
+		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
+        
+		# add encryption
+		info = self.enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd)
 
 		# DEBUG 
 		if self.DEBUG:
@@ -184,9 +200,14 @@ class SiFT_MTP:
 			print('------------------------------------------')
 		# DEBUG 
 
+		if msg_type == self.type_login_req:
+			bytes_to_send = msg_hdr + info['epd'] + info['mac'] + info['aes_key']
+		else:
+			bytes_to_send = msg_hdr + info['epd'] + info['mac']
+
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + msg_payload)
+			self.send_bytes(bytes_to_send)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 

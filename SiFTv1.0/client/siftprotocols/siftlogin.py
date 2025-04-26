@@ -55,7 +55,7 @@ class SiFT_LOGIN:
     def build_login_res(self, login_res_struct):
 
         login_res_str = login_res_struct['request_hash'].hex() 
-        login_res_str = login_res_struct['server_random'].hex() 
+        login_res_str += self.delimiter + login_res_struct['server_random'] 
         return login_res_str.encode(self.coding)
 
 
@@ -63,8 +63,9 @@ class SiFT_LOGIN:
     def parse_login_res(self, login_res):
         login_res_fields = login_res.decode(self.coding).split(self.delimiter)
         login_res_struct = {}
+
         login_res_struct['request_hash'] = bytes.fromhex(login_res_fields[0])
-        login_res_struct['server_random'] = bytes.fromhex(login_res_fieds[1])
+        login_res_struct['server_random'] = bytes.fromhex(login_res_fields[1])
         return login_res_struct
 
 
@@ -104,7 +105,7 @@ class SiFT_LOGIN:
         request_hash = hash_fn.digest()
 
         login_req_struct = self.parse_login_req(msg_payload)
-        client_random = login_req_struct[3]
+        client_random = login_req_struct['client_random']
 
         # checking timestamp correct
         current_time = time.time_ns()
@@ -194,13 +195,13 @@ class SiFT_LOGIN:
 
         # processing login response
         login_res_struct = self.parse_login_res(msg_payload)
-        server_random = login_res_struct[1]
+        server_random = login_res_struct['server_random']
 
         # checking request_hash receiveid in the login response
         if login_res_struct['request_hash'] != request_hash:
             raise SiFT_LOGIN_Error('Verification of login response failed')
         
-        # TODO: This must be passed to mtp protocol
+        
         ikm = bytes.fromhex(login_req_struct['client_random']) + server_random
         perm_sym_key = HKDF(master=ikm, key_len=32, salt=request_hash, hashmod=SHA256)
         self.mtp.set_perm_sym_key(perm_sym_key)

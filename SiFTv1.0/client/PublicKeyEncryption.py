@@ -22,6 +22,7 @@ class Encryption:
         self.keysize = 2048
         self.AESkeysize = 256
         self.sign = True
+        self.tk = None
     
     def generate(self):
         pass
@@ -77,6 +78,7 @@ class Encryption:
         RSAcipher = PKCS1_OAEP.new(pub_key)
 
         symkey = get_random_bytes(self.AESkeysize // 8)
+        self.tk = symkey
         AEScipher = AES.new(symkey, AES.MODE_GCM, nonce=sqn+rnd)
 
         AEScipher.update(message_header)
@@ -84,8 +86,20 @@ class Encryption:
         encrypted_symkey = RSAcipher.encrypt(symkey)
         hybrid_struct = {}
         hybrid_struct['aes_key'] = encrypted_symkey
-        print(f'encrypted_sym_key: {encrypted_symkey}')
         hybrid_struct['epd'] = ciphertext
         hybrid_struct['mac'] = authtag
         hybrid_struct['nonce'] = sqn+rnd
         return hybrid_struct
+    
+    def decrypt_epd(self, ciphertext, msg_header, sqn, rnd, key, authtag):
+        cipher = AES.new(key, AES.MODE_GCM, nonce=sqn+rnd)
+        try:
+            cipher.update(msg_header)
+            plaintext = cipher.decrypt_and_verify(ciphertext, authtag)
+        except (KeyError):
+            raise EncryptionError('Decryption failed or authentication tag mismatch: KeyError')
+        except (ValueError):
+            raise EncryptionError('Decryption failed or authentication tag mismatch: ValueError')
+            
+
+        return plaintext
