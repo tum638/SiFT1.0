@@ -71,14 +71,18 @@ class Encryption:
         self.save_publickey(keypair.publickey())
         self.save_keypair(keypair)
     
-    def encrypt(self, plaintext, message_header, sqn, rnd):
+    def encrypt(self, plaintext, message_header, sqn, rnd, perm_key, login = False):
         if not self.pubkeyfile:
             raise EncryptionError("Public key file not set.")
         pub_key = self.load_publickey()
         RSAcipher = PKCS1_OAEP.new(pub_key)
-
-        symkey = get_random_bytes(self.AESkeysize // 8)
-        self.tk = symkey
+        
+        if login:
+            symkey = get_random_bytes(self.AESkeysize // 8)
+            self.tk = symkey
+        else:
+            symkey = perm_key
+            
         AEScipher = AES.new(symkey, AES.MODE_GCM, nonce=sqn+rnd)
 
         AEScipher.update(message_header)

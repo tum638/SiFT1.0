@@ -138,20 +138,21 @@ class SiFT_MTP:
         
 		#decrypt the payload
 		payload = msg_body
-		if parsed_msg_hdr['typ'] == self.type_login_res:
+		sym_key = self.enc.tk if parsed_msg_hdr['typ'] == self.type_login_res else self.perm_sym_key
 			
-			parsed_msg_body = self.parse_msg_body(msg_body)
-			mac = parsed_msg_body['mac']
-			epd = parsed_msg_body['epd']
+			
+		parsed_msg_body = self.parse_msg_body(msg_body)
+		mac = parsed_msg_body['mac']
+		epd = parsed_msg_body['epd']
 
-			payload = self.enc.decrypt_epd(
-							epd,
-							msg_hdr,
-							parsed_msg_hdr['sqn'],
-							parsed_msg_hdr['rnd'], 
-							self.enc.tk, 
-							mac
-							)
+		payload = self.enc.decrypt_epd(
+						epd,
+						msg_hdr,
+						parsed_msg_hdr['sqn'],
+						parsed_msg_hdr['rnd'], 
+						sym_key, 
+						mac
+						)
 	
 
 
@@ -169,7 +170,7 @@ class SiFT_MTP:
 
 
 	# builds and sends message of a given type using the provided payload
-	def send_msg(self, msg_type, msg_payload):
+	def send_msg(self, msg_type, msg_payload, login = False):
 		
 		# build message
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_mac + (self.size_key if msg_type == self.type_login_req else 0)
@@ -186,7 +187,7 @@ class SiFT_MTP:
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
 
 		# add encryption
-		info = self.enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd)
+		info = self.enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd, self.perm_sym_key, login)
 
 		# DEBUG 
 		if self.DEBUG:

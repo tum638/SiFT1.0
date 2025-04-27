@@ -159,6 +159,18 @@ class SiFT_MTP:
 							mac
 							)
 		# TODO: add else statement for other types
+		else: 
+			parsed_msg_body = self.parse_msg_body(msg_body)
+			mac = parsed_msg_body['mac']
+			epd = parsed_msg_body['epd']
+			payload = self.enc.decrypt_epd(
+				            epd,
+							msg_hdr,
+							parsed_msg_hdr['sqn'],
+							parsed_msg_hdr['rnd'], 
+							self.perm_sym_key, 
+							mac
+							)
 			
 		return parsed_msg_hdr['typ'], payload
 
@@ -172,7 +184,7 @@ class SiFT_MTP:
 
 
 	# builds and sends message of a given type using the provided payload
-	def send_msg(self, msg_type, msg_payload):
+	def send_msg(self, msg_type, msg_payload, login = False):
 		
 		# build message
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.mac_length
@@ -189,7 +201,7 @@ class SiFT_MTP:
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + self.msg_hdr_sqn + self.msg_hdr_rnd + self.msg_hdr_rsv
         
 		# add encryption
-		info = self.enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd)
+		info = self.enc.encrypt(msg_payload, msg_hdr, self.msg_hdr_sqn, self.msg_hdr_rnd, self.perm_sym_key, login)
 
 		# DEBUG 
 		if self.DEBUG:
