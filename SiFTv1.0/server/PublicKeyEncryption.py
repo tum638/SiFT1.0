@@ -79,7 +79,7 @@ class Encryption:
         RSAcipher = PKCS1_OAEP.new(pub_key)
         
         symkey = self.tk if login else perm_key
-        AEScipher = AES.new(symkey, AES.MODE_GCM, nonce=sqn+rnd)
+        AEScipher = AES.new(symkey, AES.MODE_GCM, nonce=sqn+rnd, mac_len = 12)
         
  
         AEScipher.update(message_header)
@@ -104,7 +104,7 @@ class Encryption:
         return symkey
     
     def decrypt_epd(self, ciphertext, msg_header, sqn, rnd, key, authtag):
-        cipher = AES.new(key, AES.MODE_GCM, nonce=sqn+rnd)
+        cipher = AES.new(key, AES.MODE_GCM, nonce=sqn+rnd, mac_len = 12)
         try:
             cipher.update(msg_header)
             plaintext = cipher.decrypt_and_verify(ciphertext, authtag)

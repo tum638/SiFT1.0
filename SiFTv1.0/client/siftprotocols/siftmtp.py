@@ -27,7 +27,7 @@ class SiFT_MTP:
 		self.size_msg_hdr_sqn = 2
 		self.size_msg_hdr_rsv = 2
 		self.size_msg_hdr_rnd = 6
-		self.size_mac = 16
+		self.size_mac = 12
 		self.size_key = 256
 		self.perm_sym_key = None
 		self.type_login_req =    b'\x00\x00'
